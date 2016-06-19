@@ -1,4 +1,4 @@
-
+﻿
    CREATE OR REPLACE FUNCTION downtime(startime timestamp,endtime timestamp)
 	  RETURNS text AS
 	$BODY$
@@ -16,6 +16,7 @@
               
               IF (date_part('DOY',startDate) = date_part('DOY', endDate)) THEN 
 		    statusComent= statusComent||'::the same day';
+		    IF date_part('DOW',startDate) NOT IN(0,6) THEN 
 			    IF (startDate::time,endDate::time)OVERLAPS('00:00:01'::time ,'08:00:00'::time) AND (startDate::time,endDate::time)OVERLAPS('17:00:00'::time ,'23:59:59'::time)THEN 
 				statusComent= statusComent || '::the whole working day';
 				downtime=woking_hours_per_day;
@@ -31,10 +32,12 @@
 			        downtime=( endDate::time - startDate::time );
 			    ELSE statusComent=statusComent || '::not categotized for time';
 			    END IF;
-
+                        ELSE statusComent=statusComent || '::It is a weekend';
+                        END IF;
+                        
 	      ELSEIF  (date_part('DOY',endDate ) - date_part('DOY',startDate)=1) THEN 
 		       statusComent= statusComent || '::one Day diference';
-		       
+		    IF date_part('DOW',startDate) NOT IN(0,6) THEN 
                         IF startDate::time < '08:00:00' THEN
 			    statusComent= statusComent || '::morning start ';
 			    downtime=downtime+('17:00:00'::time - '08:00:00'::time);
@@ -46,6 +49,10 @@
 			      statusComent= statusComent || '::evening start';
 			      ---no working hour for the day
 			END IF ;
+                    ELSE statusComent=statusComent || '::It is a weekend';
+                    END IF ;
+                    
+		    IF date_part('DOW',endDate) NOT IN(0,6) THEN 
 
 			IF endDate::time < '08:00:00' THEN
 			      statusComent= statusComent || '::morning end ';                   
@@ -56,8 +63,10 @@
 			ELSEIF  endDate::time >'17:00:00' THEN
 			      statusComent= statusComent || '::evening end ';
 			  downtime=downtime+('09:00:00'::time );
-
 			END IF ;
+	          ELSE statusComent=statusComent || '::It is a weekend';
+                  END IF ;
+                  
 	     ELSEIF date_part('DOY',endDate ) - date_part('DOY',startDate)>1 THEN 			 
 	   --getting the in between dates
 	     --    startDate= startDate + interval '1 day';
@@ -106,5 +115,10 @@
 	 
 	$BODY$
    LANGUAGE plpgsql ;
+ WITH allTickets AS (SELECT * FROM all_tickets_detailed LEFT  JOIN device_real_names ON all_tickets_detailed.nodesysname=device_real_names.link_address
+ WHERE  all_tickets_detailed.firsteventtime >='2016-04-01' AND  all_tickets_detailed.firsteventtime <= '2016-04-30' )
 
+Select actual_name,nodesysname,provider_name,provider_ticket,tticketid ,alarmackuser,iflostservice,ifregainedservice,
+downtime(iflostservice::timestamp,ifregainedservice::timestamp),downtime_cause From allTickets;
 
+select * from all_tickets_detailed limit 10;
