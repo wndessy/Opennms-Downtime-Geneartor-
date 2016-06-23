@@ -1,22 +1,30 @@
 ﻿
+
+
+
    CREATE OR REPLACE FUNCTION downtime(startime timestamp,endtime timestamp)
-	  RETURNS text AS
+	 -- RETURNS interval AS
+	 RETURNS text AS
 	$BODY$
 	   DECLARE
 	     startDate timestamp;
 	     endDate timestamp;
 	     statusComent text;
 	     downtime interval;
+	     loopstartDate timestamp;
 	    woking_hours_per_day interval= '09:00:00'::time;
 	   BEGIN
               statusComent ='--';
               downtime='00:00:00'::time;
               startDate =startime;
 	      endDate = endtime;
+	 loopstartDate=startime + interval '1 day';
+
               
               IF (date_part('DOY',startDate) = date_part('DOY', endDate)) THEN 
 		    statusComent= statusComent||'::the same day';
 		    IF date_part('DOW',startDate) NOT IN(0,6) THEN 
+
 			    IF (startDate::time,endDate::time)OVERLAPS('00:00:01'::time ,'08:00:00'::time) AND (startDate::time,endDate::time)OVERLAPS('17:00:00'::time ,'23:59:59'::time)THEN 
 				statusComent= statusComent || '::the whole working day';
 				downtime=woking_hours_per_day;
@@ -32,10 +40,15 @@
 			        downtime=( endDate::time - startDate::time );
 			    ELSE statusComent=statusComent || '::not categotized for time';
 			    END IF;
-                        ELSE statusComent=statusComent || '::It is a weekend';
-                        END IF;
+		  --   ELSE statusComent= statusComent || '::weekend';
+--                     END IF;
+-- 	      ELSEIF  (date_part('DOY',endDate ) - date_part('DOY',startDate)=1) THEN 
+-- 		       statusComent= statusComent || '::one Day diference';
+-- 		       
+                       ELSE statusComent=statusComent || '::It is a weekend';
+                       END IF;
                         
-	      ELSEIF  (date_part('DOY',endDate ) - date_part('DOY',startDate)=1) THEN 
+	      ELSEIF  date_part('DOY',endDate ) - date_part('DOY',startDate) = 1 THEN 
 		       statusComent= statusComent || '::one Day diference';
 		    IF date_part('DOW',startDate) NOT IN(0,6) THEN 
                         IF startDate::time < '08:00:00' THEN
@@ -51,9 +64,7 @@
 			END IF ;
                     ELSE statusComent=statusComent || '::It is a weekend';
                     END IF ;
-                    
 		    IF date_part('DOW',endDate) NOT IN(0,6) THEN 
-
 			IF endDate::time < '08:00:00' THEN
 			      statusComent= statusComent || '::morning end ';                   
 			    --no working hour 
@@ -64,25 +75,25 @@
 			      statusComent= statusComent || '::evening end ';
 			  downtime=downtime+('09:00:00'::time );
 			END IF ;
-	          ELSE statusComent=statusComent || '::It is a weekend';
-                  END IF ;
-                  
-	     ELSEIF date_part('DOY',endDate ) - date_part('DOY',startDate)>1 THEN 			 
+	            ELSE statusComent=statusComent || '::It is a weekend';
+                    END IF;
+	     ELSEIF date_part('DOY',endDate ) - date_part('DOY',startDate) > 1 THEN 			 
 	   --getting the in between dates
-	     --    startDate= startDate + interval '1 day';
-	      statusComent= statusComent || '::More than 1 day diference ';
-		WHILE date_part('doy',startDate) < date_part('doy',endDate) LOOP
-		   IF date_part('DOW',startDate) IN (0,6) THEN 
-		       RAISE NOTICE 'WeekEnd: %', startDate;
+	      statusComent = statusComent || '::More than 1 day diference ';
+		WHILE date_part('DOY',loopstartDate) < date_part('doy',endDate) LOOP
+		   IF date_part('DOW',loopstartDate) IN (0,6) THEN 
+		       RAISE NOTICE 'WeekEnd: %', loopstartDate;
 		     ELSE 
 		       downtime= downtime + woking_hours_per_day;
-		       RAISE NOTICE 'WeekDay: %', startDate;
+		       RAISE NOTICE 'WeekDay: %', loopstartDate;
 		     END IF;
-		     startDate= startDate + interval '1 day';
+		     loopstartDate= loopstartDate + interval '1 day';
 		END LOOP;
-               -- to cater for start date and end date 
 
-                    IF date_part('DOW',startDate)NOT IN (0,6)THEN
+               -- to cater for start date and end date 
+               -- for start date
+                    IF date_part('DOW',startDate) NOT IN (0,6)THEN
+                     statusComent= statusComent || '::Weekday start ';
                         IF startDate::time < '08:00:00' THEN
 			    statusComent= statusComent || '::morning start ';
 			    downtime=downtime+('17:00:00'::time - '08:00:00'::time );
@@ -94,8 +105,11 @@
 			      statusComent= statusComent || '::evening start';
 			      ---no working hour for the day
 			END IF ;
-		     END IF;	
-		     IF date_part('DOW',endDate)NOT IN (0,6)THEN
+		    ELSE statusComent= statusComent || '::Weekend Start' || startDate;
+		    END IF;
+		    -- fo end date	
+		    IF date_part('DOW',endDate)NOT IN (0,6)THEN
+		       statusComent= statusComent || '::Weekday end ';
 			IF endDate::time < '08:00:00' THEN
 			      statusComent= statusComent || '::morning end ';                   
 			    --no working hour 
@@ -106,15 +120,19 @@
 			      statusComent= statusComent || '::evening end ';
 			  downtime=downtime+('09:00:00'::time );
 			END IF ;
-		     END IF;
+		   ELSE statusComent= statusComent || '::Weekend end '|| endDate;	
+		   END IF;
 		
            ELSE  statusComent= '::NO chek' ;   
-               END IF;
-	     RETURN downtime ||'--::--'||statusComent  ;
+           END IF;
+	    -- RETURN downtime ;
+	    RETURN downtime || '::' ||statusComent;   
 	 END ;
 	 
 	$BODY$
    LANGUAGE plpgsql ;
+
+ 
  WITH allTickets AS (SELECT * FROM all_tickets_detailed LEFT  JOIN device_real_names ON all_tickets_detailed.nodesysname=device_real_names.link_address
  WHERE  all_tickets_detailed.firsteventtime >='2016-04-01' AND  all_tickets_detailed.firsteventtime <= '2016-04-30' )
 
